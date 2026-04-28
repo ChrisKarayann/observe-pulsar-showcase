@@ -1,52 +1,71 @@
-# Observe Pulsar — Public Description
+# Observe Pulsar — Sovereign IoT Ecosystem
+
+**Observe Pulsar** is a vertically integrated IoT platform where every device communicates exclusively through encrypted WireGuard tunnels — no cloud brokers, no MQTT, no third-party accounts.
 
 ---
 
-## One-Liner
+## The Vision: Trust-Minimized Networking
 
-*For bios, social headers, forum signatures:*
+Observe Pulsar is not an IoT platform in the commercial sense. It is a sovereign networking stack — a complete, vertically-integrated system for creating private, encrypted, kernel-isolated peer-to-peer links between a mobile controller and ESP32 microcontrollers. 
 
-**Observe Pulsar** — Sovereign IoT devices connected over encrypted WireGuard tunnels. No cloud. No subscription. Full Rust stack, from bare-metal firmware to mobile app.
-
----
-
-## Short Pitch
-
-*For forum posts, video descriptions, README headers:*
-
-Observe Pulsar is a vertically integrated IoT platform where every device communicates exclusively through encrypted WireGuard tunnels — no cloud brokers, no MQTT, no third-party accounts.
-
-Devices are provisioned over Bluetooth from a mobile app, receive their cryptographic identity on first contact, and join an isolated private network segment. Each tenant's devices are firewalled from every other tenant at the kernel level. If the central relay disappears, the cryptographic keys remain with the user — not a corporation.
-
-The entire stack is written in Rust: bare-metal firmware (`#![no_std]`), the VPS relay server, and the cross-platform mobile app (Android/iOS). Hardware enclosures are custom-designed and 3D printed.
-
-One person. Full vertical: silicon to enclosure to app to server.
+- **Zero Cloud Intermediary**: No subscription layers, no data extraction, and no external dependency on any corporation's uptime.
+- **Math as the Authority**: The system does not ask for your trust; it makes trust unnecessary by enforcing security at the mathematical and kernel levels.
+- **Vertical Rigor**: One person. Full stack. Silicon to enclosure to app to server.
 
 ---
 
-## Extended Pitch
+## Technical Architecture
 
-*For CrowdSupply, blog post, detailed video narration:*
+The ecosystem is built on a three-phase lifecycle designed for maximum security and user autonomy.
 
-Every commercial IoT device you buy today routes your commands through someone else's server. Your light switch talks to Amazon. Your thermostat reports to Google. Your security camera streams to a data center you've never seen. If that company shuts down, changes their terms, or gets breached — your devices become bricks or liabilities.
+### 1. BLE Provisioning (Physical Contact)
+Cryptographic identity is bestowed, not self-generated. The mobile "Conductor" app generates X25519 keypairs and transmits them via Bluetooth Low Energy directly to the hardware. Keys never leave the user's possession.
 
-**Observe Pulsar eliminates the middleman entirely.**
+### 2. Boot Dispatch (Role Materialization)
+On reboot, the firmware connects to WiFi and synchronizes time via SNTP. A role dispatcher materializes the device's specific logic (Observer, Actor, Flow, etc.) based on the signed provisioning payload.
 
-Each Pulsar device is an ESP32-based module that establishes a point-to-point encrypted WireGuard tunnel to a lightweight relay server. The relay cannot read the traffic — it only forwards encrypted packets. The cryptographic keys are generated on your phone and never leave your possession. Devices are provisioned over Bluetooth Low Energy in seconds: scan, name, provision, done.
+### 3. The Live Tunnel (WireGuard Runtime)
+The Conductor app and Firmware establish a direct WireGuard tunnel. All commands and telemetry travel through this encrypted link. The VPS relay is "dumb"—it only forwards encrypted packets and enforces kernel-level firewall isolation between tenants.
 
-The network architecture enforces tenant isolation at the Linux kernel level. If ten users share the same relay, none of them can see, reach, or interfere with another's devices. Each user operates inside their own cryptographically sealed network segment.
+---
 
-Devices are assigned functional roles at provisioning time — sensor, actuator, relay, controller — and execute their role-specific logic autonomously on the microcontroller. Commands and telemetry travel through the encrypted tunnel with no intermediary parsing, translating, or storing your data.
+## Ecosystem Assessment Summary
 
-### The Stack
+*Conducted 2026-04-15*
+
+### Technical Maturity
+- **Protocol Design**: Coherent and lightweight, utilizing a single binary protocol (Postcard) end-to-end.
+- **Firmware**: Genuinely excellent bare-metal WireGuard implementation running on Embassy async Rust (ESP32-C3).
+- **Security**: Kernel-level silo allocation ensures each user operates inside their own cryptographically sealed network segment.
+
+### Philosophical Coherence
+The project follows a strict **Covenant**:
+- **Zero-Extraction**: No data is harvested or stored.
+- **Non-Transactional**: The system is a tool, not a service.
+- **User Autonomy**: If the tool ceases to serve the user's freedom, it is designed to be disconnected or bypassed.
+
+### Sociological Positioning
+Observe Pulsar is built for a specific audience: technically sophisticated builders, privacy-motivated individuals, and creative technologists who demand absolute control over their physical and digital environments.
+
+---
+
+## The Stack
 
 | Layer | Technology |
 |-------|------------|
-| **Firmware** | Rust, `#![no_std]`, running on ESP32 with Embassy async runtime |
-| **Networking** | Custom WireGuard implementation on bare metal — not a wrapper, not a library binding |
-| **Mobile App** | Angular + Tauri, compiling natively for Android and iOS |
-| **Relay Server** | Rust (Axum), managing peer registration and kernel-level firewall rules |
-| **Protocol** | Shared binary serialization crate used identically across firmware, app, and server |
-| **Hardware** | Custom 3D-printed enclosures designed for each device role |
+| **Firmware** | Rust (`#![no_std]`), ESP32-C3, Embassy async runtime |
+| **Networking** | Custom bare-metal WireGuard (Noise_IKpsk2) |
+| **Mobile App** | Angular + Tauri (Android/iOS), BoringTun, smoltcp |
+| **Relay Server** | Rust (Axum), SQLite, Linux kernel `ipset` isolation |
+| **Protocol** | Shared Postcard binary serialization crate |
+| **Hardware** | Custom 3D-printed enclosures for specific device roles |
 
-This is not a platform that asks for your trust. It is a system that makes trust unnecessary — because the math is doing the work.
+---
+
+## General Verdict
+
+**Observe Pulsar is a rare kind of artifact: a system that is technically serious, philosophically coherent, and culturally intentional.**
+
+It is not a consumer product. It is a systems-integration achievement that proves high-performance, sovereign IoT is possible without compromising on security or autonomy. 
+
+*The Pulsar pulses. Whether it builds a network around it depends entirely on whether the right person hears the signal.*
