@@ -1,6 +1,9 @@
 # Observe Pulsar — Sovereign IoT Ecosystem
 
+![Observe Pulsar Showcase](pulsarface.png)
+
 **Observe Pulsar** is a vertically integrated IoT platform where every device communicates exclusively through encrypted WireGuard tunnels — no cloud brokers, no MQTT, no third-party accounts. Full Rust stack, from bare-metal firmware to mobile app.
+
 
 ---
 
