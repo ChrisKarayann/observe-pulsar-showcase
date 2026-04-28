@@ -82,3 +82,22 @@ If you have read this assessment and wish to audit the source, contribute to the
 
 > [!NOTE]
 > *Observe Pulsar is a labor of technical intensity. Access is granted to those who share the vision of sovereign, decentralized infrastructure.*
+
+---
+
+<details>
+<summary>Legal Notice & License</summary>
+
+Copyright (c) 2026 Chris Karayannidis - Liturgy / Progressive Perceptions  
+All Rights Reserved.
+
+**PROPRIETARY AND CONFIDENTIAL.**
+
+This software and its associated documentation are the sole property of Chris Karayannidis (Liturgy / Progressive Perceptions). Unauthorized copying, modification, distribution, or use of this software, via any medium, is strictly prohibited.
+
+These materials are provided for demonstration and academic validation purposes only (e.g., CNAM VAPP/VAE). Any other use requires explicit written permission from the author.
+
+**Project:** Observe Pulsar - Sovereign Infrastructure Stack  
+**Reference:** OP-CORE-2026
+</details>
+
