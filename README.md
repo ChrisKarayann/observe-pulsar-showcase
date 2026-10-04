@@ -1,3 +1,6 @@
+
+https://github.com/user-attachments/assets/63f821ef-d0c7-4d34-a1d9-a6d9474fec10
+
 # Observe Pulsar
 
 ### The Assembly — Sovereign Edge Infrastructure
