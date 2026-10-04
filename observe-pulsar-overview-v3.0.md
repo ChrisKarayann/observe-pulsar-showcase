@@ -2,9 +2,7 @@
 
 ### The Assembly — Sovereign Edge Infrastructure
 
-*A private, encrypted communication system for physical devices: no cloud broker, no subscription, no vendor in the middle.*
-
-**Overview · Version 3.0 (public) · rev. 2026-10-04**
+**Overview · Version 3.0 (public) · rev. 2026-10-03**
 Liturgy Bureau · liturgy.one
 
 | | |
@@ -13,20 +11,16 @@ Liturgy Bureau · liturgy.one
 | **Status** | Architecture bench-proven. Early stage. |
 | **Field deployments** | None yet. The first are planned (§4.2). |
 | **Certifications** | None yet. A path, not a claim (§5). |
-| **Source code** | Private. Access on request (see [Request Access](#7-request-access)). |
 
 > **How to read this document.** Each section opens with a short *In plain terms* passage that stands on its own. The technical body follows for those who want it. Section 1 pairs the two directly: §1.1 is the plain account, §1.4 is the engineering one.
 
 **Contents**
-1. [Overview](#1-overview)
-2. [Market Comparison](#2-market-comparison)
-3. [Design Principles](#3-design-principles)
-4. [Readiness](#4-readiness)
-5. [Where the Architecture Goes](#5-where-the-architecture-goes)
-6. [Conclusion](#6-conclusion)
-7. [Request Access](#7-request-access)
-
-[Legal Notice & License](#legal-notice--license)
+1. Overview
+2. Market Comparison
+3. Design Principles
+4. Readiness
+5. Where the Architecture Goes
+6. Conclusion
 
 ---
 
@@ -104,23 +98,23 @@ Observe Pulsar is a vertically integrated, self-hosted IoT stack that establishe
 - **Runtime and stack:** Embassy async runtime; `smoltcp` userspace TCP/IP over a `VirtDevice` backed by the WireGuard tunnel.
 - **Custom WireGuard (`wg.rs`):** full Noise_IK state machine (initiator and responder), 64-bit sliding-window anti-replay, proactive rekey (120 s), key rotation that preserves in-flight packets.
 - **Dual-session architecture:** a persistent relay session plus an opportunistic P2P session. A direct session forms when endpoints are discovered through a LAN candidate carried in TCP responses. *Partially working; see §4.*
-- **Role system (`0x00`–`0x07`):** Lab, Observer (BME280 / generic I²C), Actor, Flow (soft-PWM), Kinetic (compact streaming packets every 25 ms under a 2 s lease), Vision, Link, Intent. Pins are assigned at compile time and the firmware refuses commands that contradict the node's role. Vision, Link and Intent are stubs.
+- **Role system (`0x00`–`0x07`):** Lab, Observer (BME280 / generic I²C), Actor, Flow (soft-PWM), Kinetic (4-byte `0x4B` streaming packets at 25 ms, 2 s lease), Vision, Link, Intent. Pins are assigned at compile time and the firmware refuses commands that contradict the node's role. Vision, Link and Intent are stubs.
 - **Safe-state contract:** a watchdog monitors `LAST_APP_HEARTBEAT`; on lease expiry, GPIO is driven to the configured fail-safe level.
-- **Two-phase boot:** Phase 1 is 120 s of strict WiFi validation, wiping on failure. Phase 2 writes a tombstone marker and retries indefinitely, for power-loss resilience.
+- **Two-phase boot:** Phase 1 is 120 s of strict WiFi validation, wiping on failure. Phase 2 writes a tombstone (`0x414C4956`) and retries indefinitely, for power-loss resilience.
 - **Time:** SNTP feeds TAI64N timestamps for WireGuard replay protection; the offset is held in a `critical_section::Mutex<Cell<u64>>`.
 
 #### Router (`pulsar-router`, ESP32-S3 + SIM7600A) — *in build*
 
 - Hand-written PPP/HDLC framer (`ppp.rs`) with LCP/IPCP state machines over UART, exposed as a `smoltcp::phy::Device` for the cellular WAN.
-- Hand-written IPv4 NAT (`nat.rs`): TCP/UDP/ICMP tracking, port allocation, and connection timeouts.
-- WiFi access point, DHCP, and an HTTP provisioning server on the AP interface.
+- Hand-written IPv4 NAT (`nat.rs`): TCP/UDP/ICMP tracking, port allocation, garbage-collection timeouts (TCP 300 s, UDP 60 s, ICMP 30 s).
+- WiFi AP (`192.168.8.1/24`), DHCP, and an HTTP provisioning server on the AP interface.
 - WAN switching by explicit operator action (`WAN:CELLULAR` / `WAN:WIFI` / `WAN:NONE`). There is deliberately no auto-failover.
 
 #### Registry Server (`pulsar-registry-server`, Axum + SQLite)
 
-- **Addressing:** each tenant (a "silo") receives its own address block, so tenants are separated at the network level.
-- **Kernel-enforced isolation:** tenant silos are enforced with kernel `ipset` and `iptables` rules under a default-deny policy; traffic between peers that are not in the same silo is dropped.
-- **Bootstrap sync:** on startup the server rebuilds peer and silo state from the database.
+- **IP allocation:** a 12-bit Silo ID maps to a /20 per tenant (4,095 silos × 4,096 IPs). Conductor = `10.{second}.{base}.1/8`; Pulsars = `10.{second}.{base+1+offset}.{offset}/8`.
+- **Kernel-enforced isolation:** one `ipset` (`PULSAR_SILOS`, `hash:net,net`), one `iptables -I FORWARD -i wg0 -o wg0 -m set --match-set PULSAR_SILOS src,dst -j ACCEPT` rule, and a default DROP.
+- **Bootstrap sync:** on startup the server reads the database, runs `wg set wg0 peer <pubkey> allowed-ips <cidr>` and `ipset add`, and writes `/etc/wireguard/peers.conf`.
 - **WAN endpoint tracking:** periodic `wg show wg0 endpoints` updates the database for hole-punching.
 
 #### Conductor App (`observe-pulsar`, Tauri + Angular)
@@ -129,7 +123,7 @@ Observe Pulsar is a vertically integrated, self-hosted IoT stack that establishe
 - **Virtual device:** a `VirtDevice` feeds the `smoltcp::Interface` with 8 concurrent TCP sockets over the encrypted tunnel.
 - **P2P mesh logic:** per-peer `boringtun` sessions in a `HashMap`; direct handshake when a LAN/WAN candidate is discovered; 120 s rekey; 10 s hole-punch probes.
 - **AllowedIPs enforcement:** every outbound TCP connection is checked against server-issued CIDRs before a socket is created, so tenant isolation also holds in userspace.
-- **Kinetic control:** a virtual joystick streams compact control packets over a persistent TCP connection at 40 Hz.
+- **Kinetic control:** a virtual joystick streams 4-byte packets (`0x4B`, x, y, flags) over a persistent TCP connection at 40 Hz.
 
 #### Hardening path & Governance
 
@@ -168,7 +162,7 @@ Every IoT system operates across four architectural layers. Observe Pulsar is bu
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | Encrypted tunnel as a core feature | ✅ | ◐ | ❌ | ✅ | ◐ | ❌ | ❌ |
 | Tenant isolation enforced in the kernel | ✅ | ❌ | ❌ | ◐ | ❌ | ◐ | ❌ |
-| Firmware that runs on your own hardware, with no vendor service | ✅ | ❌ | ✅ | ❌ | ◐ | ❌ | ❌ |
+| Firmware you own and can audit | ✅ | ❌ | ✅ | ❌ | ◐ | ❌ | ❌ |
 | Cryptographic identity per device | ✅ | ❌ | ◐ | ◐ | ◐ | ✅ | ❌ |
 | Role-aware behavior inside the device | ✅ | ◐ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Complete offline onboarding | ✅ | ❌ | ◐ | ❌ | ❌ | ❌ | ❌ |
@@ -179,13 +173,13 @@ Every IoT system operates across four architectural layers. Observe Pulsar is bu
 | Own gateway that replaces the ISP router | ◐ | ❌ | ❌ | ❌ | ❌ | ❌ | ◐ |
 | No vendor-held data or telemetry path | ✅ | ◐ | ✅ | ◐ | ❌ | ❌ | ❌ |
 | No subscription | ✅ | ✅ | ✅ | ◐ | ❌ | ❌ | ◐ |
-| No cloud or account dependency | ✅ | ✅ | ✅ | ◐ | ❌ | ❌ | ❌ |
+| No vendor lock-in | ✅ | ◐ | ✅ | ◐ | ❌ | ❌ | ❌ |
 | Whole vertical in one language and one protocol | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Typical hardware cost per node | ~$8–15 | varies | ~$8–15 | n/a | ~$35+ | varies | $30–300+ |
 
 A few cells deserve a word. For Observe Pulsar, the peer-to-peer mesh and server-independent operation are ◐ because both are partly working today (§4). The router is ◐ because it is in build. For the others, ◐ usually means "possible through add-ons, optional configuration, or a different layer of the stack."
 
-*Assessments of other projects describe their default, documented configurations as understood at the time of writing. They are good projects with real strengths, several of which Observe Pulsar does not match: Home Assistant's breadth of integrations and Tailscale's mesh maturity are two. Several of them also publish their source, which Observe Pulsar's currently does not (see [Request Access](#7-request-access)). Corrections are welcome.*
+*Assessments of other projects describe their default, documented configurations as understood at the time of writing. They are good projects with real strengths, several of which Observe Pulsar does not match: Home Assistant's breadth of integrations and Tailscale's mesh maturity are two. Corrections are welcome.*
 
 ### 2.3 What each has, and what each is missing
 
@@ -214,11 +208,11 @@ This is not a replacement for Home Assistant or Balena; it solves a different pr
 
 ### In plain terms
 
-Most systems are easiest to describe by what they add. This one is easier to understand by what it deliberately leaves out: the cloud broker, telemetry collection, the subscription and cloud dependence. Those choices are built into how the system works, so that you do not have to rely on a promise. The trade-off is that you take on responsibility for running your own system. This section explains the reasoning behind those choices and what they ask of you.
+Most systems are easiest to describe by what they add. This one is easier to understand by what it deliberately leaves out: the cloud broker, telemetry collection, the subscription and vendor lock-in. Those choices are built into how the system works, so that you do not have to rely on a promise. The trade-off is that you take on responsibility for running your own system. This section explains the reasoning behind those choices and what they ask of you.
 
 ### 3.1 What the system leaves out
 
-Every system starts with choices about what it will not do. Observe Pulsar leaves out the cloud broker, telemetry collection, the subscription layer and cloud dependence. It also avoids the ready-made option at several layers: no MQTT, no managed BLE frameworks, no pre-built WireGuard libraries on the firmware, no AWS IoT Core, no BalenaCloud, and no OS VPN stack in the app.
+Every system starts with choices about what it will not do. Observe Pulsar leaves out the cloud broker, telemetry collection, the subscription layer and vendor lock-in. It also avoids the ready-made option at several layers: no MQTT, no managed BLE frameworks, no pre-built WireGuard libraries on the firmware, no AWS IoT Core, no BalenaCloud, and no OS VPN stack in the app.
 
 The aim is not minimalism for its own sake. It is to make independence a property of the design, enforced by cryptography and kernel isolation rather than by policy. The cost is more work for the builder and for the operator (§3.9).
 
@@ -243,7 +237,7 @@ Shared terms make logs and discussions easier to read, and a log line that state
 | Principle | How the architecture reflects it |
 |---|---|
 | **Zero-Extraction Rule**: "We facilitate the signal; we do not own the data" | No vendor cloud in the path. The relay is operator-owned. Postcard messages carry no metadata fields. No analytics endpoints. |
-| **Non-Transactional Constraint**: "Prioritize client's control over recurring revenue" | No subscription layer, no license-key or activation mechanism, no API rate limits tied to billing. |
+| **Non-Transactional Constraint**: "Prioritize client's control over recurring revenue" | No subscription layer, no licensing mechanism, no API rate limits tied to billing. |
 | **Rule of Utility**: "If the tool ceases to serve the user's autonomy, the user is encouraged to disconnect" | The `CLRMEM` command wipes NVS flash and returns the device to a virgin state. |
 | **Tender Cut-Off**: "If a Pulsar generates system noise, it is your duty to recalibrate or prune the node" | The safe-state lease contract (watchdog, then fail-safe GPIO) and `CLRMEM`. |
 
@@ -259,7 +253,7 @@ Observe Pulsar assumes that the person who uses the system also runs it. The Cov
 
 Commercial IoT products usually take on that complexity for you. That is convenient, but it also means dependencies are accepted, and data and control are ceded, with little visibility. Observe Pulsar takes the opposite approach: the complexity and the control both stay with the owner.
 
-Today, once source access has been granted, the onboarding path asks for a VPS setup, a registry deployment, an app build, a firmware flash, BLE provisioning and key management: ten-plus steps with several points of failure. The Covenant is direct about it: the project will not simplify things for people unwilling to learn how the connection works. The intent is not to exclude anyone. It is a practical filter, because a system whose operator holds the keys needs an operator who understands what that involves.
+Today the onboarding path asks for a VPS setup, a registry deployment, an app build, a firmware flash, BLE provisioning and key management: ten-plus steps with several points of failure. The Covenant is direct about it: the project will not simplify things for people unwilling to learn how the connection works. The intent is not to exclude anyone. It is a practical filter, because a system whose operator holds the keys needs an operator who understands what that involves.
 
 ### 3.5 Why not the cloud
 
@@ -323,7 +317,7 @@ Authentication rests on cryptographic keys rather than on passwords or trust in 
 
 The system asks you to understand how the link works, to manage your own keys, to run your own relay, to flash your own firmware, and to accept the responsibility that comes with that. The Covenant states the exit plainly: if the tool stops serving the user's autonomy, the user is encouraged to disconnect.
 
-In return, you get a system whose dependencies you can name and whose source, on request, you can audit. Observe Pulsar is an attempt to show that a self-run alternative to licensed, cloud-dependent devices is practical to build.
+In return, you get a system whose behavior you can inspect and whose dependencies you can name. Observe Pulsar is an attempt to show that a self-run alternative to licensed, cloud-dependent devices is practical to build.
 
 ---
 
@@ -343,14 +337,14 @@ Validated on the bench. Not yet validated in the field.
 |---|---|
 | **Encrypted handshake and connection layer between devices** | Noise_IKpsk2 handshake (initiator and responder) in `#![no_std]` firmware (`wg.rs`) and in the Conductor (`boringtun`). 64-bit sliding-window anti-replay, proactive rekey (120 s), seamless key rotation. |
 | **Both connection paths, switching automatically** | Firmware dual-session architecture: a persistent relay session plus an opportunistic P2P session. Conductor per-peer `boringtun` sessions with hole-punching. A direct handshake triggers when a LAN or WAN endpoint is discovered through the `LAN:` tag in a TCP response. Kinetic streaming uses P2P when available and falls back to the relay transparently. Tested with known peers; formal server-free discovery is still to do (below). |
-| **Isolation between system parts** | Compile-time pin assignment through the `RoleHardware` enum: Observer (I²C), Actor (GPIO out), Flow (soft-PWM), Kinetic (step/dir), each locking its pins at boot. The firmware refuses commands that contradict a role contract. Kernel-level tenant isolation through `ipset` silos and a default-deny `iptables` policy. |
+| **Isolation between system parts** | Compile-time pin assignment through the `RoleHardware` enum: Observer (I²C), Actor (GPIO out), Flow (soft-PWM), Kinetic (step/dir), each locking its pins at boot. The firmware refuses commands that contradict a role contract. Kernel-level tenant isolation through `ipset` `hash:net,net` silos and a single `iptables` rule. |
 | **Offline setup and provisioning of new devices** | BLE GATT provisioning: the Conductor generates the node's X25519 keypair on the phone, registers it with the registry, assembles the `ProvisioningPayload` (keys, endpoint, IP, WiFi credentials, role, safe-state configuration), writes it over BLE, and the device reboots into the mesh. No internet required. |
 
 #### In build
 
 | Capability | Current state | Remaining |
 |---|---|---|
-| **Router** (`pulsar-router`) | ESP32-S3 firmware with a hand-written PPP/HDLC framer, LCP/IPCP state machines, IPv4 NAT (TCP/UDP/ICMP tracking, port allocation, timeouts), a WiFi access point, DHCP and an HTTP provisioning server. | Bench bring-up and integration testing; end-to-end validation with the Conductor and Pulsars. |
+| **Router** (`pulsar-router`) | ESP32-S3 firmware with a hand-written PPP/HDLC framer, LCP/IPCP state machines, IPv4 NAT (TCP/UDP/ICMP tracking, port allocation, timeouts), WiFi AP (`192.168.8.1/24`), DHCP and an HTTP provisioning server. | Bench bring-up and integration testing; end-to-end validation with the Conductor and Pulsars. |
 | **Cellular data as a backup internet path** | SIM7600A on UART2: PPP link establishment, LCP/IPCP negotiation, NAT for LAN clients. WAN switching by explicit Conductor command (`WAN:CELLULAR` / `WAN:WIFI` / `WAN:NONE`). There is deliberately no auto-failover. | Validation against a live carrier link. The local mesh does not depend on this path; it matters when the Conductor is outside the mesh. |
 
 #### Still to do
@@ -360,10 +354,10 @@ Engineering work with defined scope.
 | Capability | Current state | Work remaining |
 |---|---|---|
 | **A second, more powerful chip variant** | `pulsar-object-01` targets the ESP32-C3. A `vision_cam` feature exists for ESP32 but is untested. The router already targets the ESP32-S3. | ESP32-S3 validation for `pulsar-object-01`; a unified HAL abstraction; feature-flag consolidation; thermal and power validation on the S3. |
-| **Reconnecting cleanly after a full power-off** | Tombstone boot model implemented: Phase 1 is 120 s of strict validation, then wipe on failure; Phase 2 writes a tombstone marker and retries indefinitely. SNTP sync on boot. | Power-loss stress testing across brownout scenarios; NVS encryption and secure boot to prevent corruption; watchdog integration for brownout detection. |
+| **Reconnecting cleanly after a full power-off** | Tombstone boot model implemented: Phase 1 is 120 s of strict validation, then wipe on failure; Phase 2 writes tombstone `0x414C4956` and retries indefinitely. SNTP sync on boot. | Power-loss stress testing across brownout scenarios; NVS encryption and secure boot to prevent corruption; watchdog integration for brownout detection. |
 | **Local device discovery with no server involved** | P2P mesh partially working: firmware dual-session, Conductor per-peer sessions, LAN candidate discovery through the `LAN:` tag. | A formal peer-discovery protocol (an mDNS/SSDP equivalent over the mesh); a mesh routing schema for role-to-role communication (for example Kinetic ↔ Observer); a pre-provisioned-key workflow for zero-relay deployments. |
 | **Bridging older industrial equipment into the mesh** | Link role defined (`0x06`) with UART/I²C/SPI pin placeholders. The router has `bridge_tx` / `bridge_rx` pins and UART1 reserved for legacy bridging. | Link role firmware (protocol translation such as Modbus RTU and proprietary serial to mesh packets); a router bridge daemon; protocol translation configurations. |
-| **Weatherproof enclosure for extreme temperatures** | Per-role 3D-printed enclosures designed (design files are kept in the private repository). ESP32-C3 modules are rated −40 °C to +85 °C by the manufacturer; that rating has not been verified by our own testing. | IP67/IP69K enclosure variants; thermal management for sustained +85 °C; connector sealing (M12, cable glands); UV-resistant materials (ASA, PETG-CF). |
+| **Weatherproof enclosure for extreme temperatures** | Per-role 3D-printed enclosures designed (STL files in the repository). ESP32-C3 modules are rated −40 °C to +85 °C by the manufacturer; that rating has not been verified by our own testing. | IP67/IP69K enclosure variants; thermal management for sustained +85 °C; connector sealing (M12, cable glands); UV-resistant materials (ASA, PETG-CF). |
 
 | Category | Count |
 |---|---|
@@ -445,9 +439,9 @@ For the legacy-radio cases, the driver is to replace clear-text radio with encry
 - **Server:** Conductor, Secondary and Pulsar CRUD; `ipset` silos; a backup loop.
 - **App:** BLE provisioning, mesh routing, role-based interface, telemetry graphs.
 
-**What an operator is meant to receive:** a box of nodes, an app, a relay address, and their own keys. No cloud account, and no data leaving their infrastructure.
+**What an operator is meant to receive:** a box of nodes, an app, a relay address, and their own keys. No account creation. No terms of service. No data leaving their infrastructure.
 
-**What the builder provides:** documentation, and access to the source for audit, contribution or deployment on request, under the terms of the [Legal Notice](#legal-notice--license). No recurring revenue. No telemetry.
+**What the builder provides:** source code, schematics, STL files, documentation. No recurring revenue. No lock-in. No telemetry.
 
 This is not yet a finished product, and we won't pretend otherwise. It is a working core, proven on the bench, deliberately minimal, and ready for field testing.
 
@@ -516,37 +510,14 @@ The next steps are straightforward: finish the router, close the remaining engin
 
 The project is self-funded and intends to remain so. It is not a startup seeking investors or an exit. The aim is a modest, working piece of infrastructure that keeps existing because it is useful, and because its owners can keep running it themselves.
 
-It is built for people who want to run their own systems and are willing to learn how they work. If that describes you, see [Request Access](#7-request-access).
+It is built for people who want to run their own systems and are willing to learn how they work. If that describes you, we would like to hear from you.
 
 *Observe Pulsar: infrastructure you run yourself, with a clear account of what works today and what does not yet.*
 
 ---
 
-## 7. Request Access
+**Liturgy Bureau** · liturgy.one · chris@liturgy.one
+Observe Pulsar Overview · Version 3.0 (public) · rev. 2026-10-03
 
-The source code for the full ecosystem is currently hosted in a private repository, to protect the architectural integrity during this phase of development.
 
-If you have read this overview and wish to audit the source, contribute to the stack, or deploy a Pulsar network:
 
-1. Prepare your public SSH key.
-2. Contact the maintainer (Chris Karayannidis, chris@liturgy.one) with a brief description of your use case or reason for interest.
-3. Upon approval, you will be provided with a deploy key or repository access.
-
-> [!NOTE]
-> Observe Pulsar is a specialized infrastructure project. Access is provided for those interested in auditing, contributing to, or deploying sovereign networking systems.
-
----
-
-## Legal Notice & License
-
-Copyright (c) 2026 Chris Karayannidis - Liturgy / Progressive Perceptions
-All Rights Reserved.
-
-**PROPRIETARY AND CONFIDENTIAL.**
-
-This software and its associated documentation are the sole property of Chris Karayannidis (Liturgy / Progressive Perceptions). Unauthorized copying, modification, distribution, or use of this software, via any medium, is strictly prohibited.
-
-These materials are provided for demonstration and academic validation purposes only (e.g., CNAM VAPP/VAE). Any other use requires explicit written permission from the author.
-
-Project: Observe Pulsar - Sovereign Infrastructure Stack
-Reference: OP-CORE-2026
